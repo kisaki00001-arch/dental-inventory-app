@@ -147,7 +147,6 @@ for i, category in enumerate(categories):
                 icon = "⚠️"
 
             with st.expander(
-                with st.expander(
     f"{icon} {row.get('물품명','')} "
     f"({row.get('수량','')} {row.get('단위','')}) - {row.get('상태','')}"
 ):
