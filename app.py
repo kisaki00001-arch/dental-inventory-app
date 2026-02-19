@@ -21,7 +21,7 @@ df.columns = df.columns.str.strip()
 # 2️⃣ 필수 컬럼 정리
 # =========================
 
-required_cols = ["품목명", "수량", "단위"]
+required_cols = ["물품명", "수량", "단위"]
 
 for col in required_cols:
     if col not in df.columns:
@@ -76,7 +76,7 @@ df["부족"] = df["수량"] < df["최소재고"]
 
 col1, col2, col3, col4 = st.columns(4)
 
-col1.metric("전체 품목", len(df))
+col1.metric("전체 물품", len(df))
 col2.metric("만료", (df["상태"] == "만료").sum())
 col3.metric("임박", (df["상태"] == "임박").sum())
 col4.metric("부족", df["부족"].sum())
@@ -87,11 +87,11 @@ st.divider()
 # 6️⃣ 검색
 # =========================
 
-search = st.text_input("🔎 검색 (품목명/위치)")
+search = st.text_input("🔎 검색 (물품명/위치)")
 
 if search:
     df = df[
-        df["품목명"].str.contains(search, na=False) |
+        df["물품명"].str.contains(search, na=False) |
         df["보관위치"].astype(str).str.contains(search, na=False)
     ]
 
@@ -125,7 +125,7 @@ for i, category in enumerate(categories):
                 icon = "⚠️"
 
             with st.expander(
-                f"{icon} {row['품목명']} ({row['수량']} {row['단위']}) - {row['상태']}"
+                f"{icon} {row['물품명']} ({row['수량']} {row['단위']}) - {row['상태']}"
             ):
                 st.write(f"📍 위치: {row['보관위치']}")
                 st.write(f"⏳ 유통기한: {row['유통기한']}")
