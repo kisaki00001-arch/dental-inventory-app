@@ -104,58 +104,47 @@ menu = st.sidebar.radio("메뉴", ["재고 목록", "대시보드"])
 if menu == "재고 목록":
 
     st.title("📦 재고 목록")
+
     # ==========================
-# 상단 요약 카드
-# ==========================
-inv_all = pd.read_sql("SELECT * FROM inventory", conn)
-
-today = datetime.today()
-
-만료 = sum(expiry_status(x) == "만료" for x in inv_all["유통기한"])
-임박 = sum(expiry_status(x) == "임박" for x in inv_all["유통기한"])
-부족 = sum(inv_all["수량"] <= inv_all["최소재고"])
-전체 = len(inv_all)
-
-col1, col2, col3, col4 = st.columns(4)
-
-col1.metric("📦 전체 품목", 전체)
-col2.metric("🔴 만료", 만료)
-col3.metric("🟡 임박", 임박)
-col4.metric("⚠️ 부족", 부족)
-
-st.divider()
-
-
+    # 전체 데이터 로드
+    # ==========================
     df = pd.read_sql("SELECT * FROM inventory", conn)
 
     # ==========================
-    # 상단 필터 영역
+    # 상단 요약 카드
+    # ==========================
+    inv_all = df.copy()
+
+    만료 = sum(expiry_status(x) == "만료" for x in inv_all["유통기한"])
+    임박 = sum(expiry_status(x) == "임박" for x in inv_all["유통기한"])
+    부족 = sum(inv_all["수량"] <= inv_all["최소재고"])
+    전체 = len(inv_all)
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("📦 전체 품목", 전체)
+    col2.metric("🔴 만료", 만료)
+    col3.metric("🟡 임박", 임박)
+    col4.metric("⚠️ 부족", 부족)
+
+    st.divider()
+
+    # ==========================
+    # 필터 영역
     # ==========================
     col1, col2, col3 = st.columns(3)
 
     search = col1.text_input("🔍 검색 (이름/카테고리/위치)")
-
     status_filter = col2.selectbox(
         "상태 필터",
         ["전체", "정상", "임박", "만료", "부족"]
     )
-
     location_filter = col3.selectbox(
         "위치 필터",
         ["전체"] + sorted(df["위치"].unique().tolist())
     )
 
     # ==========================
-    # 검색 적용
-    # ==========================
-    if search:
-        df = df[df.apply(lambda r: search in str(r.values), axis=1)]
-
-    if location_filter != "전체":
-        df = df[df["위치"] == location_filter]
-
-    # ==========================
-    # 상태 계산 함수
+    # 상태 계산
     # ==========================
     def get_status(row):
         status = expiry_status(row["유통기한"])
@@ -165,6 +154,15 @@ st.divider()
         return status
 
     df["상태"] = df.apply(get_status, axis=1)
+
+    # ==========================
+    # 필터 적용
+    # ==========================
+    if search:
+        df = df[df.apply(lambda r: search in str(r.values), axis=1)]
+
+    if location_filter != "전체":
+        df = df[df["위치"] == location_filter]
 
     if status_filter != "전체":
         df = df[df["상태"] == status_filter]
@@ -245,33 +243,3 @@ st.divider()
                             conn.commit()
                             st.rerun()
 
-# ==========================
-# 대시보드
-# ==========================
-if menu == "대시보드":
-
-    st.title("📊 통합 대시보드")
-
-    inv = pd.read_sql("SELECT * FROM inventory", conn)
-    trans = pd.read_sql("SELECT * FROM transactions", conn)
-
-    today = datetime.today()
-
-    만료 = sum(expiry_status(x) == "만료" for x in inv["유통기한"])
-    임박 = sum(expiry_status(x) == "임박" for x in inv["유통기한"])
-    부족 = sum(inv["수량"] <= inv["최소재고"])
-
-    col1, col2, col3 = st.columns(3)
-    col1.metric("🔴 만료", 만료)
-    col2.metric("🟡 임박", 임박)
-    col3.metric("⚠️ 부족", 부족)
-
-    if not trans.empty:
-        trans["날짜"] = pd.to_datetime(trans["날짜"])
-        recent = trans[
-            (trans["구분"] == "사용") &
-            (trans["날짜"] >= today - timedelta(days=30))
-        ]
-        top5 = recent.groupby("물품명")["수량"].sum().sort_values(ascending=False).head(5)
-        st.subheader("최근 30일 사용 TOP5")
-        st.bar_chart(top5)
