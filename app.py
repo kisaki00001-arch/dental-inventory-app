@@ -15,7 +15,7 @@ cursor = conn.cursor()
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS inventory (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    품목명 TEXT,
+    물품명 TEXT,
     카테고리 TEXT,
     수량 INTEGER,
     단위 TEXT,
@@ -57,7 +57,7 @@ def init_from_excel():
     df["최소재고"] = pd.to_numeric(df["최소재고"], errors="coerce").fillna(0).astype(int)
     df["유통기한"] = df["유통기한"].astype(str)
 
-    insert_df = df[["품목명","카테고리","수량","단위","유통기한","최소재고","위치"]]
+    insert_df = df[["물품명","카테고리","수량","단위","유통기한","최소재고","위치"]]
     insert_df.to_sql("inventory", conn, if_exists="append", index=False)
     conn.commit()
 
