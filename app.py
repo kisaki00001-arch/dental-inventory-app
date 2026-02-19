@@ -1,27 +1,21 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-from datetime import datetime, timedelta
-import os
+from datetime import datetime
 
-st.set_page_config(page_title="치과 재고관리 시스템", layout="wide")
+st.set_page_config(layout="wide")
+DB = "inventory.db"
 
-DB_NAME = "inventory.db"
-EXCEL_FILE = "8단계_통계완성.xlsx"
-
-# ---------------------------
-# DB 연결
-# ---------------------------
-conn = sqlite3.connect(DB_NAME, check_same_thread=False)
+conn = sqlite3.connect(DB, check_same_thread=False)
 cursor = conn.cursor()
 
-# ---------------------------
+# ==========================
 # 테이블 생성
-# ---------------------------
+# ==========================
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS inventory (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    품목명 TEXT,
+    물품명 TEXT UNIQUE,
     카테고리 TEXT,
     수량 INTEGER,
     단위 TEXT,
@@ -30,160 +24,191 @@ CREATE TABLE IF NOT EXISTS inventory (
     위치 TEXT
 )
 """)
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    날짜 TEXT,
+    물품명 TEXT,
+    구분 TEXT,
+    수량 INTEGER,
+    메모 TEXT
+)
+""")
 conn.commit()
 
-# ---------------------------
-# 최초 실행 시 엑셀 데이터 삽입
-# ---------------------------
-def init_from_excel():
-    cursor.execute("SELECT COUNT(*) FROM inventory")
-    count = cursor.fetchone()[0]
+# ==========================
+# 유통기한 상태 계산
+# ==========================
+def expiry_status(date_str):
+    if not date_str:
+        return "정상"
+    try:
+        d = datetime.strptime(str(date_str)[:10], "%Y-%m-%d")
+        today = datetime.today()
+        if today > d:
+            return "만료"
+        elif (d - today).days <= 30:
+            return "임박"
+        else:
+            return "정상"
+    except:
+        return "정상"
 
-    if count == 0 and os.path.exists(EXCEL_FILE):
-        df = pd.read_excel(EXCEL_FILE)
+# ==========================
+# 메뉴
+# ==========================
+menu = st.sidebar.radio("메뉴", ["재고 목록", "대시보드"])
 
-        # 필수 컬럼만 사용
-        required_cols = ["품목명", "카테고리", "수량", "단위", "유통기한", "최소재고", "위치"]
-        df = df[required_cols]
+# ==========================
+# 재고 목록
+# ==========================
+if menu == "재고 목록":
 
-        df["수량"] = df["수량"].fillna(0).astype(int)
-        df["최소재고"] = df["최소재고"].fillna(0).astype(int)
-        df["유통기한"] = df["유통기한"].astype(str)
+    st.title("📦 재고 목록")
 
-        df.to_sql("inventory", conn, if_exists="append", index=False)
-        conn.commit()
+    df = pd.read_sql("SELECT * FROM inventory", conn)
 
-init_from_excel()
+    # 상태 계산
+    def get_status(row):
+        status = expiry_status(row["유통기한"])
+        부족 = row["수량"] <= row["최소재고"]
+        if 부족:
+            return "부족"
+        return status
 
-# ---------------------------
-# 상태 계산 함수
-# ---------------------------
-def calculate_status(row):
-    today = datetime.today().date()
+    df["상태"] = df.apply(get_status, axis=1)
 
-    if row["유통기한"] and row["유통기한"] != "nan":
-        try:
-            exp = datetime.strptime(row["유통기한"], "%Y-%m-%d").date()
-            if exp < today:
-                return "만료"
-            elif exp <= today + timedelta(days=30):
-                return "임박"
-        except:
-            pass
+    # 상단 요약 카드
+    만료 = (df["상태"] == "만료").sum()
+    임박 = (df["상태"] == "임박").sum()
+    부족 = (df["상태"] == "부족").sum()
+    전체 = len(df)
 
-    if row["수량"] <= row["최소재고"]:
-        return "부족"
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("📦 전체 품목", 전체)
+    col2.metric("🔴 만료", 만료)
+    col3.metric("🟡 임박", 임박)
+    col4.metric("⚠️ 부족", 부족)
 
-    return "정상"
+    st.divider()
 
-# ---------------------------
-# 데이터 불러오기
-# ---------------------------
-df = pd.read_sql("SELECT * FROM inventory", conn)
+    # 필터 영역
+    col1, col2, col3 = st.columns(3)
 
-if not df.empty:
-    df["상태"] = df.apply(calculate_status, axis=1)
+    search = col1.text_input("🔍 검색 (이름/카테고리/위치)")
+    status_filter = col2.selectbox(
+        "상태 필터",
+        ["전체", "정상", "임박", "만료", "부족"]
+    )
+    location_filter = col3.selectbox(
+        "위치 필터",
+        ["전체"] + sorted(df["위치"].dropna().unique().tolist())
+    )
 
-# ---------------------------
-# 헤더
-# ---------------------------
-st.title("📦 치과 재고관리 시스템")
+    if search:
+        df = df[df.apply(lambda r: search in str(r.values), axis=1)]
 
-col1, col2, col3, col4 = st.columns(4)
+    if location_filter != "전체":
+        df = df[df["위치"] == location_filter]
 
-if not df.empty:
-    col1.metric("전체 품목", len(df))
-    col2.metric("만료", len(df[df["상태"]=="만료"]))
-    col3.metric("임박", len(df[df["상태"]=="임박"]))
-    col4.metric("부족", len(df[df["상태"]=="부족"]))
-else:
-    col1.metric("전체 품목", 0)
-    col2.metric("만료", 0)
-    col3.metric("임박", 0)
-    col4.metric("부족", 0)
+    if status_filter != "전체":
+        df = df[df["상태"] == status_filter]
 
-st.divider()
+    # 위험도 정렬
+    priority_map = {"부족": 0, "만료": 1, "임박": 2, "정상": 3}
+    df["정렬순서"] = df["상태"].map(priority_map)
+    df = df.sort_values("정렬순서")
 
-# ---------------------------
-# 검색
-# ---------------------------
-search = st.text_input("🔍 검색 (이름/카테고리/위치)")
+    # 카테고리 탭
+    categories = df["카테고리"].dropna().unique().tolist()
+    tabs = st.tabs(categories)
 
-if search:
-    df = df[
-        df["품목명"].str.contains(search, case=False) |
-        df["카테고리"].str.contains(search, case=False) |
-        df["위치"].str.contains(search, case=False)
-    ]
+    for i, category in enumerate(categories):
 
-# ---------------------------
-# 카테고리 탭
-# ---------------------------
-categories = df["카테고리"].unique().tolist() if not df.empty else []
-tabs = st.tabs(categories) if categories else []
+        with tabs[i]:
 
-for i, category in enumerate(categories):
-    with tabs[i]:
-        df_cat = df[df["카테고리"] == category]
+            df_cat = df[df["카테고리"] == category]
 
-        if df_cat.empty:
-            st.info("항목 없음")
-            continue
+            if df_cat.empty:
+                st.info("해당 카테고리에 항목이 없습니다.")
+                continue
 
-        for _, row in df_cat.iterrows():
+            for _, row in df_cat.iterrows():
 
-            icon = ""
-            if row["상태"] == "만료":
-                icon = "🔴"
-            elif row["상태"] == "임박":
-                icon = "🟡"
-            elif row["상태"] == "부족":
-                icon = "⚠️"
+                # 제목 강조
+                if row["상태"] == "부족":
+                    title = f"⚠️ **{row['물품명']} ({row['수량']} {row['단위']}) - 부족**"
+                elif row["상태"] == "만료":
+                    title = f"🔴 **{row['물품명']} - 만료**"
+                elif row["상태"] == "임박":
+                    title = f"🟡 **{row['물품명']} - 임박**"
+                else:
+                    title = f"{row['물품명']} ({row['수량']} {row['단위']})"
 
-            with st.expander(
-                f"{icon} {row['품목명']} ({row['수량']} {row['단위']}) - {row['상태']}"
-            ):
-                st.write(f"📂 카테고리: {row['카테고리']}")
-                st.write(f"📍 위치: {row['위치']}")
-                st.write(f"⏳ 유통기한: {row['유통기한']}")
-                st.write(f"📦 최소재고: {row['최소재고']}")
+                with st.expander(title):
 
-                # 최소재고 수정
-                new_min = st.number_input(
-                    "최소재고 수정",
-                    min_value=0,
-                    value=int(row["최소재고"]),
-                    key=f"min_{row['id']}"
-                )
+                    st.write(f"📂 카테고리: {row['카테고리']}")
+                    st.write(f"📍 위치: {row['위치']}")
+                    st.write(f"⏳ 유통기한: {row['유통기한']}")
+                    st.write(f"📉 최소재고: {row['최소재고']}")
 
-                if st.button("저장", key=f"save_min_{row['id']}"):
-                    cursor.execute(
-                        "UPDATE inventory SET 최소재고=? WHERE id=?",
-                        (new_min, row["id"])
-                    )
-                    conn.commit()
-                    st.rerun()
+                    colA, colB = st.columns(2)
 
-                colA, colB = st.columns(2)
-
-                # 입고
-                with colA:
-                    in_qty = st.number_input("입고 수량", min_value=1, key=f"in_{row['id']}")
-                    if st.button("입고", key=f"in_btn_{row['id']}"):
-                        cursor.execute(
-                            "UPDATE inventory SET 수량=수량+? WHERE id=?",
-                            (in_qty, row["id"])
+                    with colA:
+                        in_qty = st.number_input(
+                            "입고 수량",
+                            1,
+                            key=f"in{row['id']}"
                         )
-                        conn.commit()
-                        st.rerun()
+                        if st.button("입고", key=f"inbtn{row['id']}"):
+                            cursor.execute(
+                                "UPDATE inventory SET 수량 = 수량 + ? WHERE id=?",
+                                (in_qty, row["id"])
+                            )
+                            cursor.execute("""
+                                INSERT INTO transactions
+                                (날짜, 물품명, 구분, 수량, 메모)
+                                VALUES (?, ?, '입고', ?, '')
+                            """, (datetime.now(), row["물품명"], in_qty))
+                            conn.commit()
+                            st.rerun()
 
-                # 사용
-                with colB:
-                    out_qty = st.number_input("사용 수량", min_value=1, key=f"out_{row['id']}")
-                    if st.button("사용", key=f"out_btn_{row['id']}"):
-                        cursor.execute(
-                            "UPDATE inventory SET 수량=수량-? WHERE id=?",
-                            (out_qty, row["id"])
+                    with colB:
+                        out_qty = st.number_input(
+                            "사용 수량",
+                            1,
+                            key=f"out{row['id']}"
                         )
-                        conn.commit()
-                        st.rerun()
+                        if st.button("사용", key=f"outbtn{row['id']}"):
+                            cursor.execute(
+                                "UPDATE inventory SET 수량 = 수량 - ? WHERE id=?",
+                                (out_qty, row["id"])
+                            )
+                            cursor.execute("""
+                                INSERT INTO transactions
+                                (날짜, 물품명, 구분, 수량, 메모)
+                                VALUES (?, ?, '사용', ?, '')
+                            """, (datetime.now(), row["물품명"], out_qty))
+                            conn.commit()
+                            st.rerun()
+
+# ==========================
+# 대시보드
+# ==========================
+if menu == "대시보드":
+
+    st.title("📊 통합 대시보드")
+
+    inv = pd.read_sql("SELECT * FROM inventory", conn)
+
+    inv["상태"] = inv.apply(
+        lambda r: "부족" if r["수량"] <= r["최소재고"]
+        else expiry_status(r["유통기한"]),
+        axis=1
+    )
+
+    st.metric("📦 전체 품목", len(inv))
+    st.metric("🔴 만료", (inv["상태"] == "만료").sum())
+    st.metric("🟡 임박", (inv["상태"] == "임박").sum())
+    st.metric("⚠️ 부족", (inv["상태"] == "부족").sum())
