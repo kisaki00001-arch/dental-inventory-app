@@ -102,12 +102,12 @@ st.title("📦 치과 재고관리 시스템")
 col1, col2, col3, col4 = st.columns(4)
 
 if not df.empty:
-    col1.metric("전체 품목", len(df))
+    col1.metric("전체 물품", len(df))
     col2.metric("만료", len(df[df["상태"]=="만료"]))
     col3.metric("임박", len(df[df["상태"]=="임박"]))
     col4.metric("부족", len(df[df["상태"]=="부족"]))
 else:
-    col1.metric("전체 품목", 0)
+    col1.metric("전체 물품", 0)
     col2.metric("만료", 0)
     col3.metric("임박", 0)
     col4.metric("부족", 0)
@@ -118,7 +118,7 @@ search = st.text_input("🔍 검색 (이름/카테고리/위치)")
 
 if search:
     df = df[
-        df["품목명"].str.contains(search, case=False, na=False) |
+        df["물품명"].str.contains(search, case=False, na=False) |
         df["카테고리"].str.contains(search, case=False, na=False) |
         df["위치"].str.contains(search, case=False, na=False)
     ]
@@ -147,7 +147,7 @@ for i, category in enumerate(categories):
                 icon = "⚠️"
 
             with st.expander(
-                f"{icon} {row['품목명']} ({row['수량']} {row['단위']}) - {row['상태']}"
+                f"{icon} {row['물품명']} ({row['수량']} {row['단위']}) - {row['상태']}"
             ):
 
                 st.write(f"📍 위치: {row['위치']}")
