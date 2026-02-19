@@ -151,7 +151,22 @@ if menu == "재고 목록":
                     st.write(f"📂 카테고리: {row['카테고리']}")
                     st.write(f"📍 위치: {row['위치']}")
                     st.write(f"⏳ 유통기한: {row['유통기한']}")
-                    st.write(f"📉 최소재고: {row['최소재고']}")
+                    min_stock = st.number_input(
+    "📉 최소재고 설정",
+    min_value=0,
+    value=int(row["최소재고"]),
+    key=f"min_{row['id']}"
+)
+
+if min_stock != row["최소재고"]:
+    conn.execute(
+        "UPDATE inventory SET 최소재고=? WHERE id=?",
+        (min_stock, row["id"])
+    )
+    conn.commit()
+    st.success("최소재고가 수정되었습니다.")
+    st.rerun()
+
 
                     colA, colB = st.columns(2)
 
