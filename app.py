@@ -1,3 +1,5 @@
+st.write(load_data().columns)
+st.stop()
 import streamlit as st
 import pandas as pd
 import sqlite3
