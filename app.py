@@ -105,60 +105,124 @@ if menu == "재고 목록":
 
     st.title("📦 재고 목록")
 
-    search = st.text_input("🔍 검색")
-
     df = pd.read_sql("SELECT * FROM inventory", conn)
 
+    # ==========================
+    # 상단 필터 영역
+    # ==========================
+    col1, col2, col3 = st.columns(3)
+
+    search = col1.text_input("🔍 검색 (이름/카테고리/위치)")
+
+    status_filter = col2.selectbox(
+        "상태 필터",
+        ["전체", "정상", "임박", "만료", "부족"]
+    )
+
+    location_filter = col3.selectbox(
+        "위치 필터",
+        ["전체"] + sorted(df["위치"].unique().tolist())
+    )
+
+    # ==========================
+    # 검색 적용
+    # ==========================
     if search:
         df = df[df.apply(lambda r: search in str(r.values), axis=1)]
 
-    for _, row in df.iterrows():
+    if location_filter != "전체":
+        df = df[df["위치"] == location_filter]
 
+    # ==========================
+    # 상태 계산 함수
+    # ==========================
+    def get_status(row):
         status = expiry_status(row["유통기한"])
         부족 = row["수량"] <= row["최소재고"]
+        if 부족:
+            return "부족"
+        return status
 
-        icon = ""
-        if status == "만료":
-            icon = "🔴"
-        elif status == "임박":
-            icon = "🟡"
+    df["상태"] = df.apply(get_status, axis=1)
 
-        부족텍스트 = "⚠️ 부족" if 부족 else ""
+    if status_filter != "전체":
+        df = df[df["상태"] == status_filter]
 
-        with st.expander(f"{icon} {row['물품명']} ({row['수량']} {row['단위']}) {부족텍스트}"):
+    # ==========================
+    # 카테고리 탭
+    # ==========================
+    categories = df["카테고리"].unique().tolist()
+    tabs = st.tabs(categories)
 
-            st.write(f"카테고리: {row['카테고리']}")
-            st.write(f"위치: {row['위치']}")
-            st.write(f"유통기한: {row['유통기한']}")
-            st.write(f"최소재고: {row['최소재고']}")
+    for i, category in enumerate(categories):
 
-            col1, col2 = st.columns(2)
+        with tabs[i]:
 
-            with col1:
-                in_qty = st.number_input("입고 수량", 1, key=f"in{row['id']}")
-                if st.button("입고", key=f"inbtn{row['id']}"):
-                    cursor.execute("UPDATE inventory SET 수량 = 수량 + ? WHERE id=?",
-                                   (in_qty, row["id"]))
-                    cursor.execute("""
-                        INSERT INTO transactions
-                        (날짜, 물품명, 구분, 수량, 메모)
-                        VALUES (?, ?, '입고', ?, '')
-                    """, (datetime.now(), row["물품명"], in_qty))
-                    conn.commit()
-                    st.rerun()
+            df_cat = df[df["카테고리"] == category]
 
-            with col2:
-                out_qty = st.number_input("사용 수량", 1, key=f"out{row['id']}")
-                if st.button("사용", key=f"outbtn{row['id']}"):
-                    cursor.execute("UPDATE inventory SET 수량 = 수량 - ? WHERE id=?",
-                                   (out_qty, row["id"]))
-                    cursor.execute("""
-                        INSERT INTO transactions
-                        (날짜, 물품명, 구분, 수량, 메모)
-                        VALUES (?, ?, '사용', ?, '')
-                    """, (datetime.now(), row["물품명"], out_qty))
-                    conn.commit()
-                    st.rerun()
+            if df_cat.empty:
+                st.info("해당 카테고리에 항목이 없습니다.")
+                continue
+
+            for _, row in df_cat.iterrows():
+
+                상태아이콘 = ""
+                if row["상태"] == "만료":
+                    상태아이콘 = "🔴"
+                elif row["상태"] == "임박":
+                    상태아이콘 = "🟡"
+                elif row["상태"] == "부족":
+                    상태아이콘 = "⚠️"
+
+                with st.expander(
+                    f"{상태아이콘} {row['물품명']} "
+                    f"({row['수량']} {row['단위']})"
+                ):
+
+                    st.write(f"📂 카테고리: {row['카테고리']}")
+                    st.write(f"📍 위치: {row['위치']}")
+                    st.write(f"⏳ 유통기한: {row['유통기한']}")
+                    st.write(f"📉 최소재고: {row['최소재고']}")
+
+                    colA, colB = st.columns(2)
+
+                    with colA:
+                        in_qty = st.number_input(
+                            "입고 수량",
+                            1,
+                            key=f"in{row['id']}"
+                        )
+                        if st.button("입고", key=f"inbtn{row['id']}"):
+                            cursor.execute(
+                                "UPDATE inventory SET 수량 = 수량 + ? WHERE id=?",
+                                (in_qty, row["id"])
+                            )
+                            cursor.execute("""
+                                INSERT INTO transactions
+                                (날짜, 물품명, 구분, 수량, 메모)
+                                VALUES (?, ?, '입고', ?, '')
+                            """, (datetime.now(), row["물품명"], in_qty))
+                            conn.commit()
+                            st.rerun()
+
+                    with colB:
+                        out_qty = st.number_input(
+                            "사용 수량",
+                            1,
+                            key=f"out{row['id']}"
+                        )
+                        if st.button("사용", key=f"outbtn{row['id']}"):
+                            cursor.execute(
+                                "UPDATE inventory SET 수량 = 수량 - ? WHERE id=?",
+                                (out_qty, row["id"])
+                            )
+                            cursor.execute("""
+                                INSERT INTO transactions
+                                (날짜, 물품명, 구분, 수량, 메모)
+                                VALUES (?, ?, '사용', ?, '')
+                            """, (datetime.now(), row["물품명"], out_qty))
+                            conn.commit()
+                            st.rerun()
 
 # ==========================
 # 대시보드
