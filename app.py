@@ -111,14 +111,24 @@ if menu == "재고 목록":
     df = pd.read_sql("SELECT * FROM inventory", conn)
 
     # ==========================
+    # 상태 계산 함수
+    # ==========================
+    def get_status(row):
+        status = expiry_status(row["유통기한"])
+        부족 = row["수량"] <= row["최소재고"]
+        if 부족:
+            return "부족"
+        return status
+
+    df["상태"] = df.apply(get_status, axis=1)
+
+    # ==========================
     # 상단 요약 카드
     # ==========================
-    inv_all = df.copy()
-
-    만료 = sum(expiry_status(x) == "만료" for x in inv_all["유통기한"])
-    임박 = sum(expiry_status(x) == "임박" for x in inv_all["유통기한"])
-    부족 = sum(inv_all["수량"] <= inv_all["최소재고"])
-    전체 = len(inv_all)
+    만료 = (df["상태"] == "만료").sum()
+    임박 = (df["상태"] == "임박").sum()
+    부족 = (df["상태"] == "부족").sum()
+    전체 = len(df)
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("📦 전체 품목", 전체)
@@ -140,24 +150,9 @@ if menu == "재고 목록":
     )
     location_filter = col3.selectbox(
         "위치 필터",
-        ["전체"] + sorted(df["위치"].unique().tolist())
+        ["전체"] + sorted(df["위치"].dropna().unique().tolist())
     )
 
-    # ==========================
-    # 상태 계산
-    # ==========================
-    def get_status(row):
-        status = expiry_status(row["유통기한"])
-        부족 = row["수량"] <= row["최소재고"]
-        if 부족:
-            return "부족"
-        return status
-
-    df["상태"] = df.apply(get_status, axis=1)
-
-    # ==========================
-    # 필터 적용
-    # ==========================
     if search:
         df = df[df.apply(lambda r: search in str(r.values), axis=1)]
 
@@ -168,9 +163,16 @@ if menu == "재고 목록":
         df = df[df["상태"] == status_filter]
 
     # ==========================
+    # 위험도 정렬
+    # ==========================
+    priority_map = {"부족": 0, "만료": 1, "임박": 2, "정상": 3, "없음": 4}
+    df["정렬순서"] = df["상태"].map(priority_map)
+    df = df.sort_values("정렬순서")
+
+    # ==========================
     # 카테고리 탭
     # ==========================
-    categories = df["카테고리"].unique().tolist()
+    categories = df["카테고리"].dropna().unique().tolist()
     tabs = st.tabs(categories)
 
     for i, category in enumerate(categories):
@@ -185,6 +187,7 @@ if menu == "재고 목록":
 
             for _, row in df_cat.iterrows():
 
+                # 상태 아이콘
                 상태아이콘 = ""
                 if row["상태"] == "만료":
                     상태아이콘 = "🔴"
@@ -192,6 +195,25 @@ if menu == "재고 목록":
                     상태아이콘 = "🟡"
                 elif row["상태"] == "부족":
                     상태아이콘 = "⚠️"
+
+                # 배경색 강조
+                bg_color = ""
+                if row["상태"] == "부족":
+                    bg_color = "#ffe6e6"
+                elif row["상태"] == "만료":
+                    bg_color = "#ffcccc"
+                elif row["상태"] == "임박":
+                    bg_color = "#fff4cc"
+
+                st.markdown(
+                    f"""
+                    <div style="background-color:{bg_color};
+                                padding:10px;
+                                border-radius:8px;
+                                margin-bottom:6px;">
+                    """,
+                    unsafe_allow_html=True
+                )
 
                 with st.expander(
                     f"{상태아이콘} {row['물품명']} "
@@ -242,4 +264,6 @@ if menu == "재고 목록":
                             """, (datetime.now(), row["물품명"], out_qty))
                             conn.commit()
                             st.rerun()
+
+                st.markdown("</div>", unsafe_allow_html=True)
 
