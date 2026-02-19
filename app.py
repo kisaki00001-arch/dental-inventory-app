@@ -104,6 +104,27 @@ menu = st.sidebar.radio("메뉴", ["재고 목록", "대시보드"])
 if menu == "재고 목록":
 
     st.title("📦 재고 목록")
+    # ==========================
+# 상단 요약 카드
+# ==========================
+inv_all = pd.read_sql("SELECT * FROM inventory", conn)
+
+today = datetime.today()
+
+만료 = sum(expiry_status(x) == "만료" for x in inv_all["유통기한"])
+임박 = sum(expiry_status(x) == "임박" for x in inv_all["유통기한"])
+부족 = sum(inv_all["수량"] <= inv_all["최소재고"])
+전체 = len(inv_all)
+
+col1, col2, col3, col4 = st.columns(4)
+
+col1.metric("📦 전체 품목", 전체)
+col2.metric("🔴 만료", 만료)
+col3.metric("🟡 임박", 임박)
+col4.metric("⚠️ 부족", 부족)
+
+st.divider()
+
 
     df = pd.read_sql("SELECT * FROM inventory", conn)
 
