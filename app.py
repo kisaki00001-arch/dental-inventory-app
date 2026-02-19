@@ -4,89 +4,53 @@ import os
 from datetime import datetime
 
 st.set_page_config(layout="wide")
-
 st.title("📦 치과 재고관리 시스템")
 
-# ===============================
-# 1️⃣ 엑셀 파일 목록
-# ===============================
+# =========================
+# 1️⃣ 기본 파일 읽기
+# =========================
 
-excel_files = [
-    "1단계_기본골격.xlsx",
-    "2단계_카테고리.xlsx",
-    "3단계_유통기한.xlsx",
-    "4단계_입고사용.xlsx",
-    "5단계_최소재고.xlsx",
-    "6단계_위치검색.xlsx",
-    "7단계_대시보드.xlsx",
-    "8단계_통계완성.xlsx",
-]
-
-# ===============================
-# 2️⃣ 모든 엑셀 병합
-# ===============================
-
-dfs = []
-
-for file in excel_files:
-    if os.path.exists(file):
-        df_temp = pd.read_excel(file)
-        df_temp.columns = df_temp.columns.str.strip()
-        dfs.append(df_temp)
-
-if not dfs:
-    st.error("엑셀 파일을 찾을 수 없습니다.")
+if not os.path.exists("1단계_기본골격.xlsx"):
+    st.error("1단계_기본골격.xlsx 파일이 필요합니다.")
     st.stop()
 
-# 품목명 기준 병합
-df = dfs[0]
+df = pd.read_excel("1단계_기본골격.xlsx")
+df.columns = df.columns.str.strip()
 
-for i in range(1, len(dfs)):
-    df = pd.merge(
-        df,
-        dfs[i],
-        on="품목명",
-        how="outer",
-        suffixes=("", f"_{i}")
-    )
+# =========================
+# 2️⃣ 필수 컬럼 정리
+# =========================
 
-# ===============================
-# 3️⃣ 컬럼 정리
-# ===============================
+required_cols = ["품목명", "수량", "단위"]
 
-def get_col(col):
-    for c in df.columns:
-        if c.startswith(col):
-            return c
-    return None
+for col in required_cols:
+    if col not in df.columns:
+        st.error(f"{col} 컬럼이 없습니다.")
+        st.stop()
 
-col_map = {
-    "카테고리": get_col("카테고리"),
-    "수량": get_col("수량"),
-    "단위": get_col("단위"),
-    "유통기한": get_col("유통기한"),
-    "최소재고": get_col("최소재고"),
-    "보관위치": get_col("보관위치"),
-}
+# 기본 컬럼 추가 (없으면 생성)
 
-for key, value in col_map.items():
-    if value:
-        df[key] = df[value]
-    else:
-        df[key] = ""
+extra_cols = ["카테고리", "유통기한", "최소재고", "보관위치"]
 
-# 수량 숫자 변환
+for col in extra_cols:
+    if col not in df.columns:
+        df[col] = ""
+
+# =========================
+# 3️⃣ 수량 숫자 처리
+# =========================
+
 df["수량"] = df["수량"].astype(str).str.replace(r"[^0-9]", "", regex=True)
 df["수량"] = pd.to_numeric(df["수량"], errors="coerce").fillna(0).astype(int)
 
 df["최소재고"] = pd.to_numeric(df["최소재고"], errors="coerce").fillna(0).astype(int)
 
-# ===============================
+# =========================
 # 4️⃣ 상태 계산
-# ===============================
+# =========================
 
 def calculate_status(row):
-    if pd.isna(row["유통기한"]) or row["유통기한"] == "":
+    if not row["유통기한"]:
         return "정상"
 
     try:
@@ -104,13 +68,11 @@ def calculate_status(row):
         return "정상"
 
 df["상태"] = df.apply(calculate_status, axis=1)
-
-# 부족 계산
 df["부족"] = df["수량"] < df["최소재고"]
 
-# ===============================
-# 5️⃣ 상단 요약
-# ===============================
+# =========================
+# 5️⃣ 대시보드
+# =========================
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -121,9 +83,9 @@ col4.metric("부족", df["부족"].sum())
 
 st.divider()
 
-# ===============================
+# =========================
 # 6️⃣ 검색
-# ===============================
+# =========================
 
 search = st.text_input("🔎 검색 (품목명/위치)")
 
@@ -133,16 +95,14 @@ if search:
         df["보관위치"].astype(str).str.contains(search, na=False)
     ]
 
-# ===============================
-# 7️⃣ 카테고리 탭
-# ===============================
+# =========================
+# 7️⃣ 카테고리 처리
+# =========================
 
-categories = df["카테고리"].dropna().unique().tolist()
-
-if not categories:
-    categories = ["미분류"]
+if df["카테고리"].isnull().all() or df["카테고리"].eq("").all():
     df["카테고리"] = "미분류"
 
+categories = df["카테고리"].unique().tolist()
 tabs = st.tabs(categories)
 
 for i, category in enumerate(categories):
