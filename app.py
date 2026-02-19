@@ -26,9 +26,9 @@ CREATE TABLE IF NOT EXISTS inventory (
 """)
 conn.commit()
 
-# ---------------------------
-# 🔥 엑셀 초기화 (완전 안전)
-# ---------------------------
+# -------------------------
+# 🔥 엑셀 초기 세팅
+# -------------------------
 def init_from_excel():
 
     cursor.execute("SELECT COUNT(*) FROM inventory")
@@ -41,44 +41,43 @@ def init_from_excel():
         return
 
     df = pd.read_excel(EXCEL_FILE)
-
-    # 컬럼 공백 제거
     df.columns = df.columns.str.strip()
 
-    # 필요한 컬럼
-    needed = ["품목명", "카테고리", "수량", "단위", "유통기한", "최소재고", "위치"]
+    # 보관위치 → 위치
+    if "보관위치" in df.columns:
+        df["위치"] = df["보관위치"]
+    else:
+        df["위치"] = ""
 
-    # 없는 컬럼 자동 생성
-    for col in needed:
-        if col not in df.columns:
-            df[col] = ""
-
-    df = df[needed]
+    # 수량이 "2 개" 형태일 경우 처리
+    if df["수량"].dtype == object:
+        df["수량"] = df["수량"].astype(str).str.extract(r"(\d+)").fillna(0)
 
     df["수량"] = pd.to_numeric(df["수량"], errors="coerce").fillna(0).astype(int)
     df["최소재고"] = pd.to_numeric(df["최소재고"], errors="coerce").fillna(0).astype(int)
     df["유통기한"] = df["유통기한"].astype(str)
 
-    df.to_sql("inventory", conn, if_exists="append", index=False)
+    insert_df = df[["품목명","카테고리","수량","단위","유통기한","최소재고","위치"]]
+    insert_df.to_sql("inventory", conn, if_exists="append", index=False)
     conn.commit()
 
 init_from_excel()
 
-# ---------------------------
-# 데이터 불러오기
-# ---------------------------
+# -------------------------
+# 데이터 로드
+# -------------------------
 df = pd.read_sql("SELECT * FROM inventory", conn)
 
-# ---------------------------
+# -------------------------
 # 상태 계산
-# ---------------------------
+# -------------------------
 def calculate_status(row):
 
     today = datetime.today().date()
 
     try:
         if row["유통기한"] and row["유통기한"] != "nan":
-            exp = datetime.strptime(row["유통기한"], "%Y-%m-%d").date()
+            exp = pd.to_datetime(row["유통기한"]).date()
 
             if exp < today:
                 return "만료"
@@ -95,9 +94,9 @@ def calculate_status(row):
 if not df.empty:
     df["상태"] = df.apply(calculate_status, axis=1)
 
-# ---------------------------
+# -------------------------
 # UI
-# ---------------------------
+# -------------------------
 st.title("📦 치과 재고관리 시스템")
 
 col1, col2, col3, col4 = st.columns(4)
@@ -124,10 +123,11 @@ if search:
         df["위치"].str.contains(search, case=False, na=False)
     ]
 
-categories = df["카테고리"].unique().tolist() if not df.empty else []
+categories = df["카테고리"].unique().tolist()
 tabs = st.tabs(categories) if categories else []
 
 for i, category in enumerate(categories):
+
     with tabs[i]:
 
         df_cat = df[df["카테고리"] == category]
@@ -150,7 +150,6 @@ for i, category in enumerate(categories):
                 f"{icon} {row['품목명']} ({row['수량']} {row['단위']}) - {row['상태']}"
             ):
 
-                st.write(f"📂 카테고리: {row['카테고리']}")
                 st.write(f"📍 위치: {row['위치']}")
                 st.write(f"⏳ 유통기한: {row['유통기한']}")
                 st.write(f"📦 최소재고: {row['최소재고']}")
@@ -162,7 +161,7 @@ for i, category in enumerate(categories):
                     key=f"min_{row['id']}"
                 )
 
-                if st.button("저장", key=f"save_{row['id']}"):
+                if st.button("최소재고 저장", key=f"save_{row['id']}"):
                     cursor.execute(
                         "UPDATE inventory SET 최소재고=? WHERE id=?",
                         (new_min, row["id"])
