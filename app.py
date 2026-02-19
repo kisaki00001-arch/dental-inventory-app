@@ -147,10 +147,13 @@ for i, category in enumerate(categories):
                 icon = "⚠️"
 
             with st.expander(
-                f"{icon} {row['물품명']} ({row['수량']} {row['단위']}) - {row['상태']}"
-            ):
+                with st.expander(
+    f"{icon} {row.get('물품명','')} "
+    f"({row.get('수량','')} {row.get('단위','')}) - {row.get('상태','')}"
+):
 
-                st.write(f"📍 위치: {row['위치']}")
+
+                st.write(f"📍 위치: {row['보관위치']}")
                 st.write(f"⏳ 유통기한: {row['유통기한']}")
                 st.write(f"📦 최소재고: {row['최소재고']}")
 
