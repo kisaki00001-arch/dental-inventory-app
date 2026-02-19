@@ -42,17 +42,25 @@ CREATE TABLE IF NOT EXISTS logs (
 def calculate_status(row):
     today = datetime.today().date()
 
-    if row["유통기한"]:
-        exp = datetime.strptime(row["유통기한"], "%Y-%m-%d").date()
-        if exp < today:
-            return "만료"
-        elif exp <= today + timedelta(days=30):
-            return "임박"
+    # 유통기한 처리
+    if row["유통기한"] and str(row["유통기한"]).strip() != "":
+        try:
+            exp = pd.to_datetime(row["유통기한"]).date()
 
+            if exp < today:
+                return "만료"
+            elif exp <= today + timedelta(days=30):
+                return "임박"
+
+        except:
+            pass  # 날짜 변환 실패해도 그냥 넘어감
+
+    # 최소재고 부족 체크
     if row["수량"] <= row["최소재고"]:
         return "부족"
 
     return "정상"
+
 
 
 # ==============================
