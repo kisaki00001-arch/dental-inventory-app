@@ -146,10 +146,8 @@ for i, category in enumerate(categories):
             elif row["상태"] == "부족":
                 icon = "⚠️"
 
-           with st.expander(
-    f"{icon} {row.get('물품명','')} "
-    f"({row.get('수량','')} {row.get('단위','')}) - {row.get('상태','')}"
-):
+          with st.expander(f"{icon} {row.get('물품명','')} ({row.get('수량','')} {row.get('단위','')}) - {row.get('상태','')}"):
+
     st.write(f"📍 위치: {row.get('보관위치','')}")
     st.write(f"⏳ 유통기한: {row.get('유통기한','')}")
     st.write(f"📦 최소재고: {row.get('최소재고','')}")
